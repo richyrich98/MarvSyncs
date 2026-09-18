@@ -183,6 +183,14 @@ public class MarvWatchManager extends WatchOpImpl {
         });
     }
 
+    public void syncClockNow() {
+        if (device == null || !authenticated) {
+            postError("Connect the watch first");
+            return;
+        }
+        syncClock();
+    }
+
     public void syncNow() {
         if (device == null || !authenticated) {
             postError("Connect the watch first");
@@ -230,7 +238,7 @@ public class MarvWatchManager extends WatchOpImpl {
                 Class<?>[] p = m.getParameterTypes();
                 if (p.length == 1 && BluetoothDevice.class.isAssignableFrom(p[0])) {
                     m.invoke(rtc, device);
-                    postStatus("Phone time sent to watch ✓");
+                    postStatus("Phone time synced ✓");
                     return;
                 }
                 if (p.length == 2 && BluetoothDevice.class.isAssignableFrom(p[0]) && p[1].isInterface()) {
