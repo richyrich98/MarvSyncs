@@ -1,0 +1,3 @@
+-keep class com.jieli.** { public *; protected *; }
+-keep class com.jieli.jl_rcsp.model.** { *; }
+-keep class com.jieli.jl_rcsp.impl.RcspAuth { *; }
