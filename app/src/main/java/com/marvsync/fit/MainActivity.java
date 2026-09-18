@@ -12,6 +12,8 @@ import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -35,6 +37,7 @@ import java.util.UUID;
 
 public class MainActivity extends ComponentActivity implements MarvWatchManager.Listener {
     private static final int REQUEST_BLE = 42;
+    private static final long CONNECTION_TIMEOUT_MS = 15000;
     private static final UUID AE_SERVICE = UUID.fromString("0000ae00-0000-1000-8000-00805f9b34fb");
     private static final UUID AE_WRITE = UUID.fromString("0000ae01-0000-1000-8000-00805f9b34fb");
     private static final UUID AE_NOTIFY = UUID.fromString("0000ae02-0000-1000-8000-00805f9b34fb");
@@ -54,11 +57,10 @@ public class MainActivity extends ComponentActivity implements MarvWatchManager.
     private boolean userDisconnect;
     private final Queue<byte[]> sendQueue = new ArrayDeque<>();
     private boolean sending;
-
+    private Runnable connectionTimeout;
     private MarvWatchManager watch;
 
-    private TextView connectionText, deviceText, statusText;
-    private TextView stepsValue, hrValue, spo2Value, distanceValue, caloriesValue, sleepValue;
+    private TextView connectionText, deviceText, statusText, timeText;
     private Button connectButton, syncButton;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -72,53 +74,68 @@ public class MainActivity extends ComponentActivity implements MarvWatchManager.
         int pad = dp(20);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(pad, dp(18), pad, pad);
-        root.setBackgroundColor(0xFFF5F7FA);
+        root.setPadding(pad, dp(22), pad, dp(28));
+        root.setBackgroundColor(Color.rgb(247, 248, 250));
 
-        TextView title = text("MarvSync", 30, 0xFF111827);
+        TextView title = text("MarvSync", 31, Color.rgb(17,24,39));
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
         root.addView(title, lp(-1, -2));
-        TextView subtitle = text("Direct Bluetooth sync for Marv Aura", 14, 0xFF667085);
+        TextView subtitle = text("Simple Bluetooth companion for Marv Aura", 14, Color.rgb(102,112,133));
         root.addView(subtitle, lp(-1, -2));
 
-        LinearLayout deviceCard = card();
-        connectionText = text("●  Not connected", 18, 0xFF344054);
+        LinearLayout deviceCard = roundedCard();
+        connectionText = text("●  Not connected", 19, Color.rgb(52,64,84));
+        connectionText.setTypeface(null, android.graphics.Typeface.BOLD);
         deviceCard.addView(connectionText, lp(-1, -2));
-        deviceText = text("Scan for your beatXP Marv Aura", 13, 0xFF667085);
+        deviceText = text("Your watch will appear here", 14, Color.rgb(102,112,133));
+        deviceText.setPadding(0, dp(8), 0, 0);
         deviceCard.addView(deviceText, lp(-1, -2));
-        statusText = text("Ready", 13, 0xFF475467);
-        statusText.setPadding(0, dp(10), 0, 0);
+        statusText = text("Ready to scan", 13, Color.rgb(71,84,103));
+        statusText.setPadding(0, dp(12), 0, 0);
         deviceCard.addView(statusText, lp(-1, -2));
         root.addView(deviceCard, lp(-1, -2));
 
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         buttons.setGravity(Gravity.CENTER_VERTICAL);
-        connectButton = button("CONNECT WATCH");
+        connectButton = primaryButton("SCAN & CONNECT");
         connectButton.setOnClickListener(v -> {
             if (gatt != null) disconnect(); else startScan();
         });
         buttons.addView(connectButton, weightLp(0, 1));
-        syncButton = button("SYNC NOW");
+
+        syncButton = secondaryButton("SYNC TIME");
         syncButton.setEnabled(false);
-        syncButton.setOnClickListener(v -> { if (watch != null) watch.syncNow(); });
+        syncButton.setOnClickListener(v -> {
+            if (watch != null) watch.syncClockNow();
+        });
         LinearLayout.LayoutParams sp = weightLp(0, 1);
         sp.leftMargin = dp(10);
         buttons.addView(syncButton, sp);
         root.addView(buttons, lp(-1, -2));
 
-        TextView section = text("TODAY", 13, 0xFF667085);
-        section.setPadding(0, dp(24), 0, dp(8));
-        root.addView(section, lp(-1, -2));
+        LinearLayout timeCard = roundedCard();
+        TextView timeLabel = text("WATCH TIME", 12, Color.rgb(102,112,133));
+        timeCard.addView(timeLabel, lp(-1, -2));
+        timeText = text("Not synced", 23, Color.rgb(17,24,39));
+        timeText.setTypeface(null, android.graphics.Typeface.BOLD);
+        timeText.setPadding(0, dp(6), 0, 0);
+        timeCard.addView(timeText, lp(-1, -2));
+        TextView timeHint = text("MarvSync will send your phone's current date and time after connection.", 12, Color.rgb(102,112,133));
+        timeHint.setPadding(0, dp(5), 0, 0);
+        timeCard.addView(timeHint, lp(-1, -2));
+        root.addView(timeCard, lp(-1, -2));
 
-        LinearLayout grid = new LinearLayout(this);
-        grid.setOrientation(LinearLayout.VERTICAL);
-        grid.addView(metricRow("STEPS", stepsValue = value("--"), "HEART RATE", hrValue = value("--")));
-        grid.addView(metricRow("SpO₂", spo2Value = value("--"), "DISTANCE", distanceValue = value("-- km")));
-        grid.addView(metricRow("CALORIES", caloriesValue = value("-- kcal"), "SLEEP", sleepValue = value("--")));
-        root.addView(grid, lp(-1, -2));
+        LinearLayout info = roundedCard();
+        TextView head = text("MARV AURA", 12, Color.rgb(102,112,133));
+        info.addView(head, lp(-1, -2));
+        TextView body = text("Bluetooth only\nNo OTP • No account • No cloud", 16, Color.rgb(17,24,39));
+        body.setPadding(0, dp(7), 0, 0);
+        info.addView(body, lp(-1, -2));
+        root.addView(info, lp(-1, -2));
 
-        TextView footer = text("MarvSync does not use beatXP OTP or the beatXP cloud.\nBluetooth data stays on this phone unless you add your own export later.", 12, 0xFF667085);
-        footer.setPadding(0, dp(22), 0, dp(20));
+        TextView footer = text("Keep the watch nearby while connecting. Android may show a pairing prompt on some Marv firmware versions.", 12, Color.rgb(102,112,133));
+        footer.setPadding(0, dp(18), 0, 0);
         root.addView(footer, lp(-1, -2));
 
         ScrollView scroll = new ScrollView(this);
@@ -126,45 +143,38 @@ public class MainActivity extends ComponentActivity implements MarvWatchManager.
         setContentView(scroll);
     }
 
-    private LinearLayout metricRow(String a, TextView av, String b, TextView bv) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout ca = metricCard(a, av), cb = metricCard(b, bv);
-        row.addView(ca, weightLp(0, 1));
-        LinearLayout.LayoutParams p = weightLp(0, 1); p.leftMargin = dp(10); row.addView(cb, p);
-        return row;
-    }
-
-    private LinearLayout metricCard(String label, TextView value) {
-        LinearLayout c = card();
-        c.setPadding(dp(16), dp(14), dp(16), dp(14));
-        TextView l = text(label, 11, 0xFF667085);
-        c.addView(l, lp(-1, -2));
-        c.addView(value, lp(-1, -2));
-        return c;
-    }
-
-    private TextView value(String s) {
-        TextView t = text(s, 22, 0xFF101828);
-        t.setPadding(0, dp(6), 0, 0);
-        return t;
-    }
-
-    private LinearLayout card() {
+    private LinearLayout roundedCard() {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(16), dp(14), dp(16), dp(14));
-        c.setBackgroundColor(0xFFFFFFFF);
+        c.setPadding(dp(17), dp(16), dp(17), dp(16));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.WHITE);
+        bg.setCornerRadius(dp(18));
+        bg.setStroke(dp(1), Color.rgb(232,234,238));
+        c.setBackground(bg);
         LinearLayout.LayoutParams p = lp(-1, -2);
-        p.topMargin = dp(14);
+        p.topMargin = dp(16);
         c.setLayoutParams(p);
         return c;
     }
 
-    private Button button(String s) {
+    private Button primaryButton(String s) {
         Button b = new Button(this);
-        b.setText(s);
-        b.setTextSize(12);
+        b.setText(s); b.setTextSize(12); b.setTextColor(Color.WHITE);
+        b.setAllCaps(false);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(17,24,39)); bg.setCornerRadius(dp(14));
+        b.setBackground(bg); b.setPadding(dp(8), 0, dp(8), 0);
+        return b;
+    }
+
+    private Button secondaryButton(String s) {
+        Button b = new Button(this);
+        b.setText(s); b.setTextSize(12); b.setTextColor(Color.rgb(17,24,39));
+        b.setAllCaps(false);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.WHITE); bg.setCornerRadius(dp(14)); bg.setStroke(dp(1), Color.rgb(210,214,220));
+        b.setBackground(bg); b.setPadding(dp(8), 0, dp(8), 0);
         return b;
     }
 
@@ -190,20 +200,18 @@ public class MainActivity extends ComponentActivity implements MarvWatchManager.
     }
 
     private void startScan() {
-        if (adapter == null || !adapter.isEnabled()) {
-            Toast.makeText(this, "Turn Bluetooth on first", Toast.LENGTH_SHORT).show(); return;
-        }
+        if (adapter == null || !adapter.isEnabled()) { Toast.makeText(this, "Turn Bluetooth on first", Toast.LENGTH_SHORT).show(); return; }
         if (!hasScanPermission()) { requestPermissionsIfNeeded(); return; }
         if (scanning) return;
         scanning = true; userDisconnect = false;
         connectionText.setText("●  Scanning…");
-        statusText.setText("Looking for BEATXP / MARV AURA");
+        statusText.setText("Looking for beatXP Marv Aura…");
         connectButton.setEnabled(false);
         ScanSettings settings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
         adapter.getBluetoothLeScanner().startScan(null, settings, scanCallback);
         main.postDelayed(() -> {
             if (scanning) { stopScan(); connectButton.setEnabled(true); connectionText.setText("●  Not connected"); statusText.setText("No Marv Aura found"); }
-        }, 15000);
+        }, 12000);
     }
 
     private final ScanCallback scanCallback = new ScanCallback() {
@@ -228,9 +236,19 @@ public class MainActivity extends ComponentActivity implements MarvWatchManager.
         notificationReady = false; sending = false; sendQueue.clear();
         connectionText.setText("●  Connecting…");
         deviceText.setText(name + "\n" + device.getAddress());
-        statusText.setText("Opening BLE transport…");
+        statusText.setText("Opening Bluetooth link…");
         connectButton.setText("DISCONNECT");
+        connectButton.setEnabled(true);
+        syncButton.setEnabled(false);
         watch = new MarvWatchManager(this::sendBleData, this);
+        connectionTimeout = () -> {
+            if (gatt != null && !notificationReady) {
+                statusText.setText("Connection timed out. Tap CONNECT again.");
+                userDisconnect = true;
+                try { gatt.disconnect(); } catch (Exception ignored) {}
+            }
+        };
+        main.postDelayed(connectionTimeout, CONNECTION_TIMEOUT_MS);
         gatt = Build.VERSION.SDK_INT >= 23 ? device.connectGatt(this, false, gattCallback, BluetoothDevice.TRANSPORT_LE) : device.connectGatt(this, false, gattCallback);
     }
 
@@ -238,16 +256,17 @@ public class MainActivity extends ComponentActivity implements MarvWatchManager.
         @Override public void onConnectionStateChange(BluetoothGatt g, int status, int newState) {
             runOnUiThread(() -> {
                 if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
-                    connectionText.setText("●  Connected · preparing secure link…");
-                    statusText.setText("Discovering watch services…");
+                    connectionText.setText("●  Bluetooth connected");
+                    statusText.setText("Preparing watch protocol…");
                     if (Build.VERSION.SDK_INT >= 21) g.requestMtu(247);
                     g.discoverServices();
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                    if (connectionTimeout != null) main.removeCallbacks(connectionTimeout);
                     if (watch != null) watch.onBleDisconnected(g.getDevice());
                     notificationReady = false; sending = false; sendQueue.clear(); syncButton.setEnabled(false);
                     connectionText.setText("●  Not connected");
-                    statusText.setText(userDisconnect ? "Disconnected" : "Watch disconnected");
-                    connectButton.setText("CONNECT WATCH");
+                    statusText.setText(userDisconnect ? "Disconnected" : "Bluetooth connection ended");
+                    connectButton.setText("SCAN & CONNECT");
                     connectButton.setEnabled(true);
                     closeGattOnly();
                 }
@@ -259,7 +278,7 @@ public class MainActivity extends ComponentActivity implements MarvWatchManager.
         }
 
         @Override public void onServicesDiscovered(BluetoothGatt g, int status) {
-            if (status != BluetoothGatt.GATT_SUCCESS) { statusText.setText("Service discovery failed: " + status); return; }
+            if (status != BluetoothGatt.GATT_SUCCESS) { statusText.setText("Could not prepare watch services"); return; }
             BluetoothGattCharacteristic w = null, n = null;
             if (g.getService(AE_SERVICE) != null) {
                 w = g.getService(AE_SERVICE).getCharacteristic(AE_WRITE);
@@ -271,43 +290,40 @@ public class MainActivity extends ComponentActivity implements MarvWatchManager.
                     n = g.getService(NUS_SERVICE).getCharacteristic(NUS_NOTIFY);
                 }
             }
-            if (w == null || n == null) { statusText.setText("JieLi transport characteristics not found"); return; }
+            if (w == null || n == null) { statusText.setText("Watch transport not found"); return; }
             writeCharacteristic = w; notifyCharacteristic = n;
             writeCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
             if (g.setCharacteristicNotification(n, true)) {
                 BluetoothGattDescriptor d = n.getDescriptor(CCCD);
                 if (d != null) {
                     d.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                    g.writeDescriptor(d);
-                } else {
-                    notificationReady = true;
-                    beginAuth();
-                }
+                    if (!g.writeDescriptor(d)) { statusText.setText("Could not enable notifications"); return; }
+                } else { notificationReady = true; beginAuth(); }
             } else statusText.setText("Could not enable watch notifications");
         }
 
         @Override public void onDescriptorWrite(BluetoothGatt g, BluetoothGattDescriptor d, int status) {
             if (CCCD.equals(d.getUuid()) && status == BluetoothGatt.GATT_SUCCESS) {
                 notificationReady = true; beginAuth();
+            } else if (CCCD.equals(d.getUuid())) {
+                statusText.setText("Watch notification setup failed");
             }
         }
 
         @Override public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic c) {
-            if (notifyCharacteristic != null && notifyCharacteristic.getUuid().equals(c.getUuid()) && watch != null) {
-                watch.onBleData(g.getDevice(), c.getValue());
-            }
+            if (notifyCharacteristic != null && notifyCharacteristic.getUuid().equals(c.getUuid()) && watch != null) watch.onBleData(g.getDevice(), c.getValue());
         }
 
         @Override public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
             if (writeCharacteristic != null && writeCharacteristic.getUuid().equals(c.getUuid())) {
                 sending = false;
-                if (status == BluetoothGatt.GATT_SUCCESS) pumpQueue(); else { sendQueue.clear(); statusText.setText("BLE write failed: " + status); }
+                if (status == BluetoothGatt.GATT_SUCCESS) pumpQueue(); else { sendQueue.clear(); statusText.setText("Bluetooth data transfer failed"); }
             }
         }
     };
 
     private void beginAuth() {
-        runOnUiThread(() -> statusText.setText("Secure handshake with watch…"));
+        runOnUiThread(() -> statusText.setText("Authenticating watch…"));
         if (watch != null && gatt != null) watch.onBleConnected(gatt.getDevice());
     }
 
@@ -334,6 +350,7 @@ public class MainActivity extends ComponentActivity implements MarvWatchManager.
 
     private void disconnect() {
         userDisconnect = true;
+        if (connectionTimeout != null) main.removeCallbacks(connectionTimeout);
         if (gatt != null) { try { gatt.disconnect(); } catch (Exception ignored) {} }
     }
 
@@ -344,23 +361,20 @@ public class MainActivity extends ComponentActivity implements MarvWatchManager.
 
     private boolean hasConnectPermission() { return Build.VERSION.SDK_INT < 31 || ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED; }
 
-    @Override public void onStatus(String text) { statusText.setText(text); }
-    @Override public void onHeartRate(int value) { if (value > 0) hrValue.setText(value + " bpm"); }
-    @Override public void onSteps(int value, double distanceKm, int calories) {
-        if (value >= 0) stepsValue.setText(String.valueOf(value));
-        if (distanceKm >= 0) distanceValue.setText(String.format(java.util.Locale.US, "%.2f km", distanceKm));
-        if (calories >= 0) caloriesValue.setText(calories + " kcal");
-        syncButton.setEnabled(true);
+    @Override public void onStatus(String text) {
+        statusText.setText(text);
+        if (text != null && text.toLowerCase().contains("sync") && text.toLowerCase().contains("time")) timeText.setText("Synced ✓");
+        if (text != null && (text.contains("authenticated") || text.contains("Watch authenticated"))) syncButton.setEnabled(true);
     }
-    @Override public void onSpO2(int value) { if (value > 0) spo2Value.setText(value + "%"); }
-    @Override public void onSleep(int deep, int light, int rem, int awake) {
-        int total = deep + light + rem + awake;
-        sleepValue.setText((total / 60) + "h " + (total % 60) + "m");
-    }
-    @Override public void onError(String text) { statusText.setText(text); syncButton.setEnabled(gatt != null); }
+    @Override public void onHeartRate(int value) { }
+    @Override public void onSteps(int value, double distanceKm, int calories) { }
+    @Override public void onSpO2(int value) { }
+    @Override public void onSleep(int deep, int light, int rem, int awake) { }
+    @Override public void onError(String text) { statusText.setText(text); syncButton.setEnabled(gatt != null && notificationReady); }
 
     @Override protected void onDestroy() {
         stopScan();
+        if (connectionTimeout != null) main.removeCallbacks(connectionTimeout);
         if (watch != null) watch.releaseManager();
         userDisconnect = true; closeGattOnly();
         super.onDestroy();
